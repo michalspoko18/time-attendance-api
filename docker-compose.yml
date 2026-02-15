@@ -30,7 +30,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-    command: sh -c "python api/manage.py migrate --noinput && exec python api/manage.py runserver 0.0.0.0:8000"
+    command: sh -c "python api/manage.py migrate --noinput && python api/manage.py loaddata api/fixtures/admin_user.json && exec python api/manage.py runserver 0.0.0.0:8000"
 
 volumes:
   postgres_data:

@@ -28,7 +28,12 @@ Powinieneś dostać:
 
 ## Przydatne komendy
 
-Tworzenie superusera:
+Domyślne konto admina (ładowane automatycznie z fixture przy starcie):
+
+- login: `admin`
+- hasło: `admin123`
+
+Ręczne tworzenie dodatkowego superusera:
 
 ```bash
 docker compose exec app python api/manage.py createsuperuser

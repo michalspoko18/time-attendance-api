@@ -1,15 +1,17 @@
 [
   {
-    "model": "auth.user",
+    "model": "users.user",
     "pk": 1,
     "fields": {
       "password": "pbkdf2_sha256$1200000$hyCAlXdrHzJwGCcA3qBE9y$Fhhj0dYhAWgUmoFuMZqtaifWd6r5/bdL4idenmpxZY0=",
       "last_login": null,
       "is_superuser": true,
       "username": "admin",
-      "first_name": "",
-      "last_name": "",
-      "email": "admin@example.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john.doe@example.com",
+      "employee_id": "EMP-0001",
+      "employment": "FT",
       "is_staff": true,
       "is_active": true,
       "date_joined": "2026-01-01T00:00:00Z",

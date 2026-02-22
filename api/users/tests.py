@@ -75,4 +75,4 @@ class LoginViewTests(APITestCase):
         access_token = response.data['access']
         token = AccessToken(access_token)
 
-        self.assertEqual(token['user_id'], str(self.user.id))
+        self.assertEqual(int(token['user_id']), self.user.id)

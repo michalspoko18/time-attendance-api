@@ -1,10 +1,12 @@
 from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .models import ConsumedQrToken
 from .tokens import ALLOWED_EVENT_TYPES, issue_attendance_qr_token, verify_attendance_qr_token
 
 
@@ -73,6 +75,18 @@ def verify(request):
         return Response(
             {'detail': 'Token employee_id is not assigned to an active user.'},
             status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        ConsumedQrToken.objects.create(
+            nonce=payload['nonce'],
+            employee_id=payload['employee_id'],
+            event_type=payload['event_type'],
+        )
+    except IntegrityError:
+        return Response(
+            {'detail': 'QR token already used.'},
+            status=status.HTTP_409_CONFLICT,
         )
 
     return Response(

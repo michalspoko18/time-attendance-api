@@ -112,3 +112,23 @@ class AttendanceQrFlowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_verify_same_token_twice_returns_409_on_second_use(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        first_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+        second_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_response.status_code, status.HTTP_409_CONFLICT)

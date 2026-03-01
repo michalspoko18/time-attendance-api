@@ -107,7 +107,11 @@ def verify(request):
                 WorkSession.objects.create(user=user)
             if payload['event_type'] == 'exit':
                 session_to_close.ended_at = timezone.now()
-                session_to_close.save(update_fields=['ended_at'])
+                duration_seconds = int(
+                    (session_to_close.ended_at - session_to_close.started_at).total_seconds()
+                )
+                session_to_close.duration_seconds = max(duration_seconds, 0)
+                session_to_close.save(update_fields=['ended_at', 'duration_seconds'])
     except IntegrityError:
         return Response(
             {'detail': 'QR token already used.'},

@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from datetime import timedelta
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -63,7 +65,9 @@ class AttendanceQrFlowTests(APITestCase):
         self.assertIsNotNone(open_session)
 
     def test_verify_success_for_exit_ends_open_work_session(self):
-        WorkSession.objects.create(user=self.user)
+        session = WorkSession.objects.create(user=self.user)
+        session.started_at = timezone.now() - timedelta(hours=2)
+        session.save(update_fields=['started_at'])
 
         generate_response = self.client.post(
             self.generate_url,
@@ -83,6 +87,10 @@ class AttendanceQrFlowTests(APITestCase):
         self.assertEqual(verify_response.data['event_type'], 'exit')
         open_session_exists = WorkSession.objects.filter(user=self.user, ended_at__isnull=True).exists()
         self.assertFalse(open_session_exists)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.ended_at)
+        self.assertIsNotNone(session.duration_seconds)
+        self.assertGreaterEqual(session.duration_seconds, 1)
 
     def test_verify_tampered_token_returns_400(self):
         token, _payload = issue_attendance_qr_token(

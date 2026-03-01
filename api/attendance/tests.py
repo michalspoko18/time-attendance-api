@@ -56,8 +56,8 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
         self.assertTrue(verify_response.data['valid'])
-        self.assertEqual(verify_response.data['employee_id'], self.user.employee_id)
         self.assertEqual(verify_response.data['event_type'], 'exit')
+        self.assertEqual(set(verify_response.data.keys()), {'valid', 'event_type'})
 
     def test_verify_tampered_token_returns_400(self):
         token, _payload = issue_attendance_qr_token(

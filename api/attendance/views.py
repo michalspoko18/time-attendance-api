@@ -78,9 +78,7 @@ def verify(request):
     return Response(
         {
             'valid': True,
-            'employee_id': payload['employee_id'],
             'event_type': payload['event_type'],
-            'nonce': payload['nonce'],
         },
         status=status.HTTP_200_OK,
     )

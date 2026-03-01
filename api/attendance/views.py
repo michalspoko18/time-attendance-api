@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import IntegrityError
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -78,18 +79,7 @@ def verify(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    try:
-        ConsumedQrToken.objects.create(
-            nonce=payload['nonce'],
-            employee_id=payload['employee_id'],
-            event_type=payload['event_type'],
-        )
-    except IntegrityError:
-        return Response(
-            {'detail': 'QR token already used.'},
-            status=status.HTTP_409_CONFLICT,
-        )
-
+    session_to_close = None
     if payload['event_type'] == 'entry':
         open_session_exists = WorkSession.objects.filter(user=user, ended_at__isnull=True).exists()
         if open_session_exists:
@@ -97,17 +87,32 @@ def verify(request):
                 {'detail': 'Cannot start work: open session already exists.'},
                 status=status.HTTP_409_CONFLICT,
             )
-        WorkSession.objects.create(user=user)
 
     if payload['event_type'] == 'exit':
-        open_session = WorkSession.objects.filter(user=user, ended_at__isnull=True).order_by('started_at').first()
-        if open_session is None:
+        session_to_close = WorkSession.objects.filter(user=user, ended_at__isnull=True).order_by('started_at').first()
+        if session_to_close is None:
             return Response(
                 {'detail': 'Cannot end work: no open session found.'},
                 status=status.HTTP_409_CONFLICT,
             )
-        open_session.ended_at = timezone.now()
-        open_session.save(update_fields=['ended_at'])
+
+    try:
+        with transaction.atomic():
+            ConsumedQrToken.objects.create(
+                nonce=payload['nonce'],
+                employee_id=payload['employee_id'],
+                event_type=payload['event_type'],
+            )
+            if payload['event_type'] == 'entry':
+                WorkSession.objects.create(user=user)
+            if payload['event_type'] == 'exit':
+                session_to_close.ended_at = timezone.now()
+                session_to_close.save(update_fields=['ended_at'])
+    except IntegrityError:
+        return Response(
+            {'detail': 'QR token already used.'},
+            status=status.HTTP_409_CONFLICT,
+        )
 
     return Response(
         {

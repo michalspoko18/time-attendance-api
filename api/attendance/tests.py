@@ -173,6 +173,29 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
 
+    def test_verify_entry_conflict_does_not_consume_token(self):
+        open_session = WorkSession.objects.create(user=self.user)
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        first_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+        open_session.ended_at = open_session.started_at
+        open_session.save(update_fields=['ended_at'])
+        second_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
     def test_verify_exit_without_open_session_returns_409(self):
         token, _payload = issue_attendance_qr_token(
             employee_id=self.user.employee_id,
@@ -186,3 +209,24 @@ class AttendanceQrFlowTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_verify_exit_conflict_does_not_consume_token(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='exit',
+        )
+
+        first_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+        WorkSession.objects.create(user=self.user)
+        second_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(second_response.status_code, status.HTTP_200_OK)

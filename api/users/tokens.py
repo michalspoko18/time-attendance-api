@@ -7,6 +7,7 @@ REFRESH_COOKIE_NAME = 'refresh_token'
 
 def issue_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
+    refresh['employee_id'] = user.employee_id
     return {
         'access': str(refresh.access_token),
         'refresh': str(refresh),

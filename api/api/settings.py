@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'users',
+    'attendance',
 ]
 
 MIDDLEWARE = [
@@ -151,3 +152,7 @@ SIMPLE_JWT = {
 }
 
 AUTH_USER_MODEL = 'users.User'
+
+ATTENDANCE_QR_TOKEN_MAX_AGE_SECONDS = int(
+    os.getenv('ATTENDANCE_QR_TOKEN_MAX_AGE_SECONDS', '300')
+)

@@ -29,9 +29,7 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn('qr_token', response.data)
-        self.assertEqual(response.data['employee_id'], self.user.employee_id)
-        self.assertEqual(response.data['event_type'], 'entry')
-        self.assertTrue(response.data.get('nonce'))
+        self.assertEqual(set(response.data.keys()), {'qr_token'})
 
     def test_generate_qrcode_invalid_event_type_returns_400(self):
         response = self.client.post(

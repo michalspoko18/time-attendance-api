@@ -39,14 +39,9 @@ def generate_qrcode(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    qr_token, payload = issue_attendance_qr_token(employee_id=user.employee_id, event_type=event_type)
+    qr_token, _payload = issue_attendance_qr_token(employee_id=user.employee_id, event_type=event_type)
     return Response(
-        {
-            'qr_token': qr_token,
-            'employee_id': payload['employee_id'],
-            'event_type': payload['event_type'],
-            'nonce': payload['nonce'],
-        },
+        {'qr_token': qr_token},
         status=status.HTTP_201_CREATED,
     )
 

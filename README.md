@@ -26,6 +26,28 @@ Powinieneś dostać:
 {"status":"ok"}
 ```
 
+## Attendance QR API
+
+Wymagane jest uwierzytelnienie JWT (`Authorization: Bearer <access_token>`).
+
+Generowanie tokenu QR:
+
+```bash
+curl -X POST http://localhost:8000/api/attendance/generate_qrcode/ \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"event_type":"entry"}'
+```
+
+Weryfikacja tokenu QR:
+
+```bash
+curl -X POST http://localhost:8000/api/attendance/verify/ \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"qr_token":"<token-z-generate_qrcode>"}'
+```
+
 ## Przydatne komendy
 
 Domyślne konto admina (ładowane automatycznie z fixture przy starcie):

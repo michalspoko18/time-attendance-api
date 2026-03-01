@@ -1,12 +1,13 @@
 from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import IntegrityError
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ConsumedQrToken
+from .models import ConsumedQrToken, WorkSession
 from .tokens import ALLOWED_EVENT_TYPES, issue_attendance_qr_token, verify_attendance_qr_token
 
 
@@ -67,11 +68,11 @@ def verify(request):
     except ValueError as exc:
         return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-    user_exists = get_user_model().objects.filter(
+    user = get_user_model().objects.filter(
         employee_id=payload['employee_id'],
         is_active=True,
-    ).exists()
-    if not user_exists:
+    ).first()
+    if user is None:
         return Response(
             {'detail': 'Token employee_id is not assigned to an active user.'},
             status=status.HTTP_404_NOT_FOUND,
@@ -88,6 +89,25 @@ def verify(request):
             {'detail': 'QR token already used.'},
             status=status.HTTP_409_CONFLICT,
         )
+
+    if payload['event_type'] == 'entry':
+        open_session_exists = WorkSession.objects.filter(user=user, ended_at__isnull=True).exists()
+        if open_session_exists:
+            return Response(
+                {'detail': 'Cannot start work: open session already exists.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        WorkSession.objects.create(user=user)
+
+    if payload['event_type'] == 'exit':
+        open_session = WorkSession.objects.filter(user=user, ended_at__isnull=True).order_by('started_at').first()
+        if open_session is None:
+            return Response(
+                {'detail': 'Cannot end work: no open session found.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        open_session.ended_at = timezone.now()
+        open_session.save(update_fields=['ended_at'])
 
     return Response(
         {

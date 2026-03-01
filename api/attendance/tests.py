@@ -3,6 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from .models import WorkSession
 from .tokens import issue_attendance_qr_token
 
 
@@ -40,7 +41,30 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_verify_success_for_fresh_generated_token(self):
+    def test_verify_success_for_entry_starts_work_session(self):
+        generate_response = self.client.post(
+            self.generate_url,
+            {'event_type': 'entry'},
+            format='json',
+        )
+        token = generate_response.data['qr_token']
+
+        verify_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(verify_response.data['valid'])
+        self.assertEqual(verify_response.data['event_type'], 'entry')
+        self.assertEqual(set(verify_response.data.keys()), {'valid', 'event_type'})
+        open_session = WorkSession.objects.filter(user=self.user, ended_at__isnull=True).first()
+        self.assertIsNotNone(open_session)
+
+    def test_verify_success_for_exit_ends_open_work_session(self):
+        WorkSession.objects.create(user=self.user)
+
         generate_response = self.client.post(
             self.generate_url,
             {'event_type': 'exit'},
@@ -57,7 +81,8 @@ class AttendanceQrFlowTests(APITestCase):
         self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
         self.assertTrue(verify_response.data['valid'])
         self.assertEqual(verify_response.data['event_type'], 'exit')
-        self.assertEqual(set(verify_response.data.keys()), {'valid', 'event_type'})
+        open_session_exists = WorkSession.objects.filter(user=self.user, ended_at__isnull=True).exists()
+        self.assertFalse(open_session_exists)
 
     def test_verify_tampered_token_returns_400(self):
         token, _payload = issue_attendance_qr_token(
@@ -132,3 +157,32 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(first_response.status_code, status.HTTP_200_OK)
         self.assertEqual(second_response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_verify_entry_when_open_session_exists_returns_409(self):
+        WorkSession.objects.create(user=self.user)
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_verify_exit_without_open_session_returns_409(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='exit',
+        )
+
+        response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)

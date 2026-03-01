@@ -15,6 +15,7 @@ class WorkSession(models.Model):
     user = models.ForeignKey('users.User', on_delete=models.CASCADE, related_name='work_sessions')
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ['-started_at']

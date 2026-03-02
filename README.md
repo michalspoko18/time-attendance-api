@@ -48,6 +48,22 @@ curl -X POST http://localhost:8000/api/attendance/verify/ \
   -d '{"qr_token":"<token-z-generate_qrcode>"}'
 ```
 
+## Attendance Stats API
+
+Podsumowanie czasu pracy zalogowanego użytkownika:
+
+```bash
+curl -X GET "http://localhost:8000/api/attendance/stats/summary/?date_from=2026-03-01&date_to=2026-03-31" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Lista sesji pracy z filtrami i paginacją:
+
+```bash
+curl -X GET "http://localhost:8000/api/attendance/stats/sessions/?status=closed&page=1&page_size=20" \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ## Przydatne komendy
 
 Domyślne konto admina (ładowane automatycznie z fixture przy starcie):

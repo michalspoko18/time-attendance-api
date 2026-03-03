@@ -2,14 +2,90 @@ from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import IntegrityError
 from django.db import transaction
+from django.db.models import Sum
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import ConsumedQrToken, WorkSession
 from .tokens import ALLOWED_EVENT_TYPES, issue_attendance_qr_token, verify_attendance_qr_token
+
+
+def _parse_stats_filters(request):
+    date_from_raw = request.query_params.get('date_from')
+    date_to_raw = request.query_params.get('date_to')
+    status_filter = request.query_params.get('status')
+
+    date_from = None
+    if date_from_raw:
+        date_from = parse_date(date_from_raw)
+        if date_from is None:
+            return None, Response(
+                {'detail': 'Invalid date_from. Expected YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    date_to = None
+    if date_to_raw:
+        date_to = parse_date(date_to_raw)
+        if date_to is None:
+            return None, Response(
+                {'detail': 'Invalid date_to. Expected YYYY-MM-DD.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if date_from and date_to and date_from > date_to:
+        return None, Response(
+            {'detail': 'date_from cannot be greater than date_to.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if status_filter and status_filter not in {'open', 'closed'}:
+        return None, Response(
+            {'detail': "Invalid status. Allowed values: 'open', 'closed'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return {
+        'date_from': date_from,
+        'date_to': date_to,
+        'status': status_filter,
+    }, None
+
+
+def _get_filtered_sessions(user, filters):
+    sessions = WorkSession.objects.filter(user=user)
+
+    if filters['date_from']:
+        sessions = sessions.filter(started_at__date__gte=filters['date_from'])
+    if filters['date_to']:
+        sessions = sessions.filter(started_at__date__lte=filters['date_to'])
+    if filters['status'] == 'open':
+        sessions = sessions.filter(ended_at__isnull=True)
+    if filters['status'] == 'closed':
+        sessions = sessions.filter(ended_at__isnull=False)
+
+    return sessions
+
+
+def _serialize_session(session):
+    return {
+        'id': session.id,
+        'started_at': session.started_at,
+        'ended_at': session.ended_at,
+        'duration_seconds': session.duration_seconds,
+        'status': 'open' if session.ended_at is None else 'closed',
+    }
+
+
+class WorkSessionPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 @api_view(['POST'])
@@ -125,3 +201,43 @@ def verify(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def stats_summary(request):
+    filters, error_response = _parse_stats_filters(request)
+    if error_response:
+        return error_response
+
+    sessions = _get_filtered_sessions(request.user, filters)
+    aggregate = sessions.aggregate(total_duration_seconds=Sum('duration_seconds'))
+
+    return Response(
+        {
+            'total_duration_seconds': aggregate['total_duration_seconds'] or 0,
+            'worked_sessions_count': sessions.filter(ended_at__isnull=False).count(),
+            'open_sessions_count': sessions.filter(ended_at__isnull=True).count(),
+            'total_sessions_count': sessions.count(),
+            'filters': {
+                'date_from': filters['date_from'].isoformat() if filters['date_from'] else None,
+                'date_to': filters['date_to'].isoformat() if filters['date_to'] else None,
+                'status': filters['status'],
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def stats_sessions(request):
+    filters, error_response = _parse_stats_filters(request)
+    if error_response:
+        return error_response
+
+    sessions = _get_filtered_sessions(request.user, filters).order_by('-started_at', '-id')
+    paginator = WorkSessionPagination()
+    page = paginator.paginate_queryset(sessions, request)
+    serialized_sessions = [_serialize_session(session) for session in page]
+    return paginator.get_paginated_response(serialized_sessions)

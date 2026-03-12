@@ -30,6 +30,13 @@ Powinieneś dostać:
 
 Wymagane jest uwierzytelnienie JWT (`Authorization: Bearer <access_token>`).
 
+Pobranie danych zalogowanego użytkownika:
+
+```bash
+curl http://localhost:8000/api/auth/me/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
 Generowanie tokenu QR:
 
 ```bash

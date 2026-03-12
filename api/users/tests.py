@@ -77,3 +77,43 @@ class LoginViewTests(APITestCase):
 
         self.assertEqual(int(token['user_id']), self.user.id)
         self.assertEqual(token['employee_id'], self.user.employee_id)
+
+
+class MeViewTests(APITestCase):
+    def setUp(self):
+        self.url = reverse('me')
+        self.user = get_user_model().objects.create_user(
+            username='me-user',
+            first_name='Jan',
+            last_name='Kowalski',
+            email='me@example.com',
+            employee_id='EMP-3000',
+            employment='PT',
+            is_active=True,
+            password='Str0ngP@ssword!',
+        )
+
+    def test_me_returns_authenticated_user_data(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            {
+                'id': self.user.id,
+                'username': self.user.username,
+                'first_name': self.user.first_name,
+                'last_name': self.user.last_name,
+                'email': self.user.email,
+                'employee_id': self.user.employee_id,
+                'employment': self.user.employment,
+                'is_active': self.user.is_active,
+            },
+        )
+
+    def test_me_requires_authentication(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

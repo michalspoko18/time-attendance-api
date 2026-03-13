@@ -173,6 +173,20 @@
       "item": [
         {
           "name": "Generate QR Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.qr_token) pm.collectionVariables.set('qrToken', json.qr_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -246,6 +260,38 @@
                 "attendance",
                 "verify",
                 ""
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Scan Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/scan-status/?qr_token={{qrToken}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "attendance",
+                "scan-status",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "qr_token",
+                  "value": "{{qrToken}}"
+                }
               ]
             }
           },

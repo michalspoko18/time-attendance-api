@@ -21,6 +21,7 @@ class AttendanceQrFlowTests(APITestCase):
         )
         self.generate_url = reverse('attendance-generate-qrcode')
         self.verify_url = reverse('attendance-verify')
+        self.scan_status_url = reverse('attendance-scan-status')
         self.client.force_authenticate(user=self.user)
 
     def test_generate_qrcode_success(self):
@@ -131,7 +132,7 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_verify_requires_authentication(self):
+    def test_verify_does_not_require_authentication(self):
         self.client.force_authenticate(user=None)
         token, _payload = issue_attendance_qr_token(
             employee_id=self.user.employee_id,
@@ -144,6 +145,16 @@ class AttendanceQrFlowTests(APITestCase):
             format='json',
         )
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_scan_status_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        response = self.client.get(f'{self.scan_status_url}?qr_token={token}')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_verify_same_token_twice_returns_409_on_second_use(self):
@@ -203,6 +214,57 @@ class AttendanceQrFlowTests(APITestCase):
 
         self.assertEqual(first_response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
+    def test_scan_status_returns_pending_for_not_scanned_token(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        response = self.client.get(f'{self.scan_status_url}?qr_token={token}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'pending')
+        self.assertFalse(response.data['scanned'])
+        self.assertEqual(response.data['event_type'], 'entry')
+        self.assertIsNone(response.data['scanned_at'])
+
+    def test_scan_status_returns_ok_after_verify(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+        verify_response = self.client.post(
+            self.verify_url,
+            {'qr_token': token},
+            format='json',
+        )
+        self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
+
+        status_response = self.client.get(f'{self.scan_status_url}?qr_token={token}')
+
+        self.assertEqual(status_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_response.data['status'], 'ok')
+        self.assertTrue(status_response.data['scanned'])
+        self.assertEqual(status_response.data['event_type'], 'entry')
+        self.assertIsNotNone(status_response.data['scanned_at'])
+
+    def test_scan_status_requires_qr_token_query_param(self):
+        response = self.client.get(self.scan_status_url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_scan_status_invalid_token_returns_400(self):
+        response = self.client.get(f'{self.scan_status_url}?qr_token=invalid-token')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_scan_status_for_other_employee_returns_403(self):
+        token, _payload = issue_attendance_qr_token(
+            employee_id='EMP-OTHER',
+            event_type='entry',
+        )
+
+        response = self.client.get(f'{self.scan_status_url}?qr_token={token}')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AttendanceStatsTests(APITestCase):

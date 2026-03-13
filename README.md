@@ -55,6 +55,23 @@ curl -X POST http://localhost:8000/api/attendance/verify/ \
   -d '{"qr_token":"<token-z-generate_qrcode>"}'
 ```
 
+Sprawdzenie statusu skanu (polling):
+
+```bash
+curl -X GET "http://localhost:8000/api/attendance/scan-status/?qr_token=<token-z-generate_qrcode>" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Przykładowe odpowiedzi:
+
+```json
+{"status":"pending","scanned":false,"event_type":"entry","scanned_at":null}
+```
+
+```json
+{"status":"ok","scanned":true,"event_type":"entry","scanned_at":"2026-03-13T18:00:00Z"}
+```
+
 ## Attendance Stats API
 
 Podsumowanie czasu pracy zalogowanego użytkownika:

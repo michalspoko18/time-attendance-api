@@ -205,6 +205,48 @@ def verify(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def scan_status(request):
+    qr_token = request.query_params.get('qr_token')
+    if not qr_token:
+        return Response(
+            {'detail': 'qr_token is required.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        payload = verify_attendance_qr_token(qr_token)
+    except SignatureExpired:
+        return Response({'detail': 'QR token expired.'}, status=status.HTTP_400_BAD_REQUEST)
+    except BadSignature:
+        return Response({'detail': 'Invalid QR token signature.'}, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    request_employee_id = request.user.employee_id
+    if request.auth is not None:
+        request_employee_id = request.auth.get('employee_id', request_employee_id)
+
+    if payload['employee_id'] != request_employee_id:
+        return Response(
+            {'detail': 'You do not have access to this QR token.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    consumed_token = ConsumedQrToken.objects.filter(nonce=payload['nonce']).first()
+    is_scanned = consumed_token is not None
+    return Response(
+        {
+            'status': 'ok' if is_scanned else 'pending',
+            'scanned': is_scanned,
+            'event_type': payload['event_type'],
+            'scanned_at': consumed_token.consumed_at if consumed_token else None,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def stats_summary(request):
     filters, error_response = _parse_stats_filters(request)
     if error_response:

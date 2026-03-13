@@ -28,7 +28,8 @@ Powinieneś dostać:
 
 ## Attendance QR API
 
-Wymagane jest uwierzytelnienie JWT (`Authorization: Bearer <access_token>`).
+`generate_qrcode` oraz `scan-status` wymagają uwierzytelnienia JWT (`Authorization: Bearer <access_token>`).
+`verify` jest tymczasowo dostępne bez JWT.
 
 Pobranie danych zalogowanego użytkownika:
 

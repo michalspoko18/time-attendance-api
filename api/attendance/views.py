@@ -127,7 +127,6 @@ def generate_qrcode(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def verify(request):
     qr_token = request.data.get('qr_token')
     if not qr_token:

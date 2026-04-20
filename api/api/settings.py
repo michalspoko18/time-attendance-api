@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import importlib.util
 from pathlib import Path
 from datetime import timedelta
 
@@ -40,7 +41,9 @@ ALLOWED_HOSTS = [
 # Application definition
 
 INSTALLED_APPS = [
+    'django_daisy',
     'django.contrib.admin',
+    'django.contrib.humanize',  
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -50,6 +53,11 @@ INSTALLED_APPS = [
     'users',
     'attendance',
 ]
+
+# for dashboard_app in ('daisyui_dashboard', 'daisy', 'django_daisy'):
+#     if importlib.util.find_spec(dashboard_app):
+#         INSTALLED_APPS.insert(0, dashboard_app)
+#         break
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

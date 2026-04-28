@@ -14,3 +14,4 @@ class User(AbstractUser):
         max_length=2,
         choices=employment_type.choices
     )
+    is_manager = models.BooleanField(default=False)

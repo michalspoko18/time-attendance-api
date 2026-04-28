@@ -83,6 +83,7 @@ def me(request):
             'employee_id': user.employee_id,
             'employment': user.employment,
             'is_active': user.is_active,
+            'is_manager': user.is_manager,
         },
         status=status.HTTP_200_OK,
     )

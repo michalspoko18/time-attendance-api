@@ -2,9 +2,10 @@ from django.contrib.auth import get_user_model
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import IntegrityError
 from django.db import transaction
-from django.db.models import Sum, Q
+from django.db.models import Q
 from django.utils.dateparse import parse_date
 from django.utils import timezone
+from datetime import datetime, time, timedelta
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
@@ -61,15 +62,89 @@ def _get_filtered_sessions(user, filters):
     sessions = WorkSession.objects.filter(user=user)
 
     if filters['date_from']:
-        sessions = sessions.filter(started_at__date__gte=filters['date_from'])
+        date_from_start, _ = _local_day_bounds(filters['date_from'])
+        sessions = sessions.filter(Q(ended_at__isnull=True) | Q(ended_at__gt=date_from_start))
     if filters['date_to']:
-        sessions = sessions.filter(started_at__date__lte=filters['date_to'])
+        _, date_to_end = _local_day_bounds(filters['date_to'])
+        sessions = sessions.filter(started_at__lt=date_to_end)
     if filters['status'] == 'open':
         sessions = sessions.filter(ended_at__isnull=True)
     if filters['status'] == 'closed':
         sessions = sessions.filter(ended_at__isnull=False)
 
     return sessions
+
+
+def _local_day_bounds(day):
+    current_timezone = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(day, time.min), current_timezone)
+    end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min), current_timezone)
+    return start, end
+
+
+def _date_range_bounds(date_from, date_to):
+    range_start = None
+    range_end = None
+
+    if date_from:
+        range_start, _ = _local_day_bounds(date_from)
+    if date_to:
+        _, range_end = _local_day_bounds(date_to)
+
+    return range_start, range_end
+
+
+def _overlap_seconds(start, end, range_start=None, range_end=None):
+    effective_start = max(start, range_start) if range_start else start
+    effective_end = min(end, range_end) if range_end else end
+
+    if effective_end <= effective_start:
+        return 0
+
+    return max(0, int((effective_end - effective_start).total_seconds()))
+
+
+def _session_overlap_seconds(session, range_start=None, range_end=None, now=None, include_open=False):
+    if session.ended_at is None:
+        if not include_open:
+            return 0
+        session_end = now or timezone.now()
+    else:
+        session_end = session.ended_at
+
+    return _overlap_seconds(session.started_at, session_end, range_start, range_end)
+
+
+def _session_seconds_for_day(session, day, now=None, include_open=False):
+    day_start, day_end = _local_day_bounds(day)
+    return _session_overlap_seconds(
+        session,
+        range_start=day_start,
+        range_end=day_end,
+        now=now,
+        include_open=include_open,
+    )
+
+
+def _sessions_overlapping_day(queryset, day):
+    day_start, day_end = _local_day_bounds(day)
+    return queryset.filter(started_at__lt=day_end).filter(
+        Q(ended_at__isnull=True) | Q(ended_at__gt=day_start)
+    )
+
+
+def _total_seconds_for_range(queryset, date_from=None, date_to=None, include_open=False, now=None):
+    range_start, range_end = _date_range_bounds(date_from, date_to)
+    return sum(
+        _session_overlap_seconds(
+            session,
+            range_start=range_start,
+            range_end=range_end,
+            now=now,
+            include_open=include_open,
+        )
+        for session in queryset
+    )
 
 
 def _serialize_session(session):
@@ -252,11 +327,14 @@ def stats_summary(request):
         return error_response
 
     sessions = _get_filtered_sessions(request.user, filters)
-    aggregate = sessions.aggregate(total_duration_seconds=Sum('duration_seconds'))
 
     return Response(
         {
-            'total_duration_seconds': aggregate['total_duration_seconds'] or 0,
+            'total_duration_seconds': _total_seconds_for_range(
+                sessions,
+                date_from=filters['date_from'],
+                date_to=filters['date_to'],
+            ),
             'worked_sessions_count': sessions.filter(ended_at__isnull=False).count(),
             'open_sessions_count': sessions.filter(ended_at__isnull=True).count(),
             'total_sessions_count': sessions.count(),
@@ -306,21 +384,19 @@ class IsManager(BasePermission):
 def _today_session_data(user):
     """Return today's work data for a single user."""
     today = timezone.localdate()
-    today_sessions = WorkSession.objects.filter(user=user, started_at__date=today)
+    now = timezone.now()
+    today_sessions = _sessions_overlapping_day(WorkSession.objects.filter(user=user), today)
     open_session = today_sessions.filter(ended_at__isnull=True).order_by('started_at').first()
-    closed_aggregate = today_sessions.filter(ended_at__isnull=False).aggregate(
-        total=Sum('duration_seconds')
+    total_today_seconds = sum(
+        _session_seconds_for_day(session, today, now=now, include_open=True)
+        for session in today_sessions
     )
-    closed_seconds = closed_aggregate['total'] or 0
 
     if open_session:
-        running_seconds = int((timezone.now() - open_session.started_at).total_seconds())
-        total_today_seconds = closed_seconds + max(running_seconds, 0)
         current_status = 'in'
         started_at = open_session.started_at
     else:
-        total_today_seconds = closed_seconds
-        current_status = 'out' if closed_seconds > 0 else 'absent'
+        current_status = 'out' if total_today_seconds > 0 else 'absent'
         first_session = today_sessions.order_by('started_at').first()
         started_at = first_session.started_at if first_session else None
 
@@ -355,16 +431,17 @@ def manager_overview(request):
     """Global stats: user counts, today's attendance counts."""
     User = get_user_model()
     today = timezone.localdate()
+    today_sessions = _sessions_overlapping_day(WorkSession.objects.filter(user__is_active=True), today)
 
     total_users = User.objects.filter(is_active=True).count()
     users_in = (
-        WorkSession.objects.filter(started_at__date=today, ended_at__isnull=True)
+        WorkSession.objects.filter(user__is_active=True, ended_at__isnull=True)
         .values('user')
         .distinct()
         .count()
     )
     users_worked_today = (
-        WorkSession.objects.filter(started_at__date=today)
+        today_sessions
         .values('user')
         .distinct()
         .count()
@@ -426,18 +503,15 @@ def manager_user_detail(request, employee_id):
     week_start = today - timezone.timedelta(days=today.weekday())
     month_start = today.replace(day=1)
 
-    def _total_seconds(qs):
-        return qs.filter(ended_at__isnull=False).aggregate(t=Sum('duration_seconds'))['t'] or 0
-
     all_sessions = WorkSession.objects.filter(user=user)
     today_data = _today_session_data(user)
 
     data = _serialize_user_base(user)
     data['stats'] = {
         'today_seconds': today_data['today_seconds'],
-        'week_seconds': _total_seconds(all_sessions.filter(started_at__date__gte=week_start)),
-        'month_seconds': _total_seconds(all_sessions.filter(started_at__date__gte=month_start)),
-        'total_seconds': _total_seconds(all_sessions),
+        'week_seconds': _total_seconds_for_range(all_sessions, week_start, today, include_open=True),
+        'month_seconds': _total_seconds_for_range(all_sessions, month_start, today, include_open=True),
+        'total_seconds': _total_seconds_for_range(all_sessions, include_open=True),
         'total_sessions': all_sessions.count(),
     }
     data['today'] = today_data
@@ -483,24 +557,21 @@ def manager_user_daily_breakdown(request, employee_id):
     if date_from is None or date_to is None:
         return Response({'detail': 'Invalid date format. Expected YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    from django.db.models.functions import TruncDate
-
-    rows = (
-        WorkSession.objects.filter(
-            user=user,
-            started_at__date__gte=date_from,
-            started_at__date__lte=date_to,
-            ended_at__isnull=False,
-        )
-        .annotate(day=TruncDate('started_at'))
-        .values('day')
-        .annotate(total_seconds=Sum('duration_seconds'))
-        .order_by('day')
+    sessions = (
+        WorkSession.objects.filter(user=user, started_at__lt=_local_day_bounds(date_to)[1])
+        .filter(Q(ended_at__isnull=True) | Q(ended_at__gt=_local_day_bounds(date_from)[0]))
     )
+    now = timezone.now()
 
-    breakdown = [
-        {'date': row['day'].isoformat(), 'total_seconds': row['total_seconds'] or 0}
-        for row in rows
-    ]
+    breakdown = []
+    current_day = date_from
+    while current_day <= date_to:
+        total_seconds = sum(
+            _session_seconds_for_day(session, current_day, now=now, include_open=True)
+            for session in sessions
+        )
+        if total_seconds > 0:
+            breakdown.append({'date': current_day.isoformat(), 'total_seconds': total_seconds})
+        current_day += timedelta(days=1)
+
     return Response(breakdown, status=status.HTTP_200_OK)
-

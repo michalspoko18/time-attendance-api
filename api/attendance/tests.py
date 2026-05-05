@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from datetime import timedelta
+from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -288,6 +288,7 @@ class AttendanceStatsTests(APITestCase):
         )
         self.summary_url = reverse('attendance-stats-summary')
         self.sessions_url = reverse('attendance-stats-sessions')
+        self.manager_daily_url = reverse('manager-daily')
         self.client.force_authenticate(user=self.user)
 
     def _create_session(self, user, started_at, ended_at=None, duration_seconds=None):
@@ -357,6 +358,25 @@ class AttendanceStatsTests(APITestCase):
         self.assertEqual(response.data['total_duration_seconds'], 7200)
         self.assertEqual(response.data['total_sessions_count'], 1)
 
+    def test_stats_summary_splits_overnight_session_by_filtered_day(self):
+        current_timezone = timezone.get_current_timezone()
+        started_at = timezone.make_aware(datetime(2026, 5, 1, 22, 0), current_timezone)
+        ended_at = timezone.make_aware(datetime(2026, 5, 2, 2, 0), current_timezone)
+        self._create_session(
+            user=self.user,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=14400,
+        )
+
+        response = self.client.get(
+            f'{self.summary_url}?date_from=2026-05-02&date_to=2026-05-02'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_duration_seconds'], 7200)
+        self.assertEqual(response.data['total_sessions_count'], 1)
+
     def test_stats_summary_invalid_date_returns_400(self):
         response = self.client.get(f'{self.summary_url}?date_from=2026-13-99')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -403,6 +423,54 @@ class AttendanceStatsTests(APITestCase):
     def test_stats_sessions_invalid_status_returns_400(self):
         response = self.client.get(f'{self.sessions_url}?status=invalid')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_manager_daily_counts_open_session_started_yesterday_as_in_today(self):
+        self.user.is_manager = True
+        self.user.save(update_fields=['is_manager'])
+        current_timezone = timezone.get_current_timezone()
+        yesterday = timezone.localdate() - timedelta(days=1)
+        yesterday_start = timezone.make_aware(
+            datetime(yesterday.year, yesterday.month, yesterday.day, 23, 0),
+            current_timezone,
+        )
+        self._create_session(
+            user=self.user,
+            started_at=yesterday_start,
+            ended_at=None,
+            duration_seconds=None,
+        )
+
+        response = self.client.get(self.manager_daily_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user_row = next(row for row in response.data if row['employee_id'] == self.user.employee_id)
+        self.assertEqual(user_row['status'], 'in')
+        self.assertGreater(user_row['today_seconds'], 0)
+
+    def test_manager_daily_breakdown_splits_overnight_session_between_days(self):
+        self.user.is_manager = True
+        self.user.save(update_fields=['is_manager'])
+        current_timezone = timezone.get_current_timezone()
+        started_at = timezone.make_aware(datetime(2026, 5, 1, 22, 0), current_timezone)
+        ended_at = timezone.make_aware(datetime(2026, 5, 2, 2, 0), current_timezone)
+        self._create_session(
+            user=self.user,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=14400,
+        )
+
+        url = reverse('manager-user-daily-breakdown', args=[self.user.employee_id])
+        response = self.client.get(f'{url}?date_from=2026-05-01&date_to=2026-05-02')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data,
+            [
+                {'date': '2026-05-01', 'total_seconds': 7200},
+                {'date': '2026-05-02', 'total_seconds': 7200},
+            ],
+        )
 
     def test_verify_exit_without_open_session_returns_409(self):
         token, _payload = issue_attendance_qr_token(

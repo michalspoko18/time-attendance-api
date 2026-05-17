@@ -13,14 +13,8 @@
         "header": [],
         "url": {
           "raw": "{{baseUrl}}/api/health/",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "api",
-            "health",
-            ""
-          ]
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health", ""]
         }
       },
       "response": []
@@ -69,15 +63,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login", ""]
             }
           },
           "response": []
@@ -100,16 +87,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/token/refresh/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "token",
-                "refresh",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "token", "refresh", ""]
             }
           },
           "response": []
@@ -127,15 +106,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/logout/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "logout",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout", ""]
             }
           },
           "response": []
@@ -153,15 +125,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/auth/me/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "me",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me", ""]
             }
           },
           "response": []
@@ -212,15 +177,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/attendance/generate_qrcode/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "attendance",
-                "generate_qrcode",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "generate_qrcode", ""]
             }
           },
           "response": []
@@ -247,15 +205,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/attendance/verify/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "attendance",
-                "verify",
-                ""
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "verify", ""]
             }
           },
           "response": []
@@ -273,15 +224,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/attendance/scan-status/?qr_token={{qrToken}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "attendance",
-                "scan-status",
-                ""
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "scan-status", ""],
               "query": [
                 {
                   "key": "qr_token",
@@ -305,16 +249,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/attendance/stats/summary/?date_from={{dateFrom}}&date_to={{dateTo}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "attendance",
-                "stats",
-                "summary",
-                ""
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "stats", "summary", ""],
               "query": [
                 {
                   "key": "date_from",
@@ -342,16 +278,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/attendance/stats/sessions/?status={{status}}&page={{page}}&page_size={{pageSize}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "attendance",
-                "stats",
-                "sessions",
-                ""
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "stats", "sessions", ""],
               "query": [
                 {
                   "key": "status",
@@ -365,6 +293,149 @@
                   "key": "page_size",
                   "value": "{{pageSize}}"
                 }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/overview/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "manager", "overview", ""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager Daily",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/daily/?date={{date}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "manager", "daily", ""],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "{{date}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager Users List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/users/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "attendance", "manager", "users", ""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager User Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/users/{{employeeId}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "attendance",
+                "manager",
+                "users",
+                "{{employeeId}}",
+                ""
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager User Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/users/{{employeeId}}/sessions/",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "attendance",
+                "manager",
+                "users",
+                "{{employeeId}}",
+                "sessions",
+                ""
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Manager User Daily Breakdown",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/attendance/manager/users/{{employeeId}}/daily-breakdown/",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "attendance",
+                "manager",
+                "users",
+                "{{employeeId}}",
+                "daily-breakdown",
+                ""
               ]
             }
           },
@@ -409,6 +480,14 @@
     {
       "key": "pageSize",
       "value": "20"
+    },
+    {
+      "key": "employeeId",
+      "value": ""
+    },
+    {
+      "key": "date",
+      "value": "2026-05-17"
     }
   ]
 }

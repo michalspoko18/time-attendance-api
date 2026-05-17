@@ -46,6 +46,14 @@ Panel administracyjny Django dostępny pod: `http://localhost:8000/admin/`
 | `POSTGRES_PORT`                       | Port bazy danych            | `5432`                |
 | `ATTENDANCE_QR_TOKEN_MAX_AGE_SECONDS` | Czas życia tokenu QR (s)    | `300`                 |
 
+## Testowanie — Postman
+
+Kolekcja Postman dostępna w `postman/time-attendance-api.postman_collection.json`.
+
+Aby zaimportować: **Postman → Import → wybierz plik**.
+
+Kolekcja zawiera predefiniowane zmienne (`baseUrl`, `accessToken`, `refreshToken`, `qrToken`, `employeeId` i inne) oraz skrypty testowe, które automatycznie zapisują tokeny JWT po zalogowaniu i token QR po jego wygenerowaniu.
+
 ## Endpointy API
 
 ### Autentykacja — `/api/auth/`

@@ -1,12 +1,17 @@
 from django.contrib.auth import get_user_model
+from django.core import signing
+from django.core.signing import SignatureExpired
+from django.test import TestCase
 from django.urls import reverse
 from datetime import datetime, timedelta
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
+from unittest.mock import patch
 
-from .models import WorkSession
-from .tokens import issue_attendance_qr_token
+from .models import ConsumedQrToken, WorkSession
+from .tokens import issue_attendance_qr_token, validate_attendance_payload
 
 
 class AttendanceQrFlowTests(APITestCase):
@@ -266,6 +271,70 @@ class AttendanceQrFlowTests(APITestCase):
         response = self.client.get(f'{self.scan_status_url}?qr_token={token}')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_verify_without_qr_token_returns_400(self):
+        response = self.client.post(self.verify_url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_verify_expired_token_returns_400(self):
+        with patch('attendance.views.verify_attendance_qr_token', side_effect=SignatureExpired):
+            response = self.client.post(
+                self.verify_url,
+                {'qr_token': 'any-token'},
+                format='json',
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_verify_invalid_payload_structure_returns_400(self):
+        invalid_token = signing.dumps('not-a-dict', salt='attendance.qr.token')
+        response = self.client.post(
+            self.verify_url,
+            {'qr_token': invalid_token},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_generate_qrcode_requires_event_type(self):
+        response = self.client.post(self.generate_url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_generate_qrcode_returns_404_when_employee_id_not_found(self):
+        token = AccessToken.for_user(self.user)
+        token['employee_id'] = 'EMP-DOES-NOT-EXIST'
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {str(token)}')
+        response = self.client.post(
+            self.generate_url,
+            {'event_type': 'entry'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_scan_status_expired_token_returns_400(self):
+        with patch('attendance.views.verify_attendance_qr_token', side_effect=SignatureExpired):
+            response = self.client.get(f'{self.scan_status_url}?qr_token=any')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_scan_status_invalid_payload_structure_returns_400(self):
+        invalid_token = signing.dumps('not-a-dict', salt='attendance.qr.token')
+        response = self.client.get(f'{self.scan_status_url}?qr_token={invalid_token}')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_scan_status_with_jwt_auth_reads_employee_id_from_token(self):
+        jwt_token = AccessToken.for_user(self.user)
+        jwt_token['employee_id'] = self.user.employee_id
+        qr_token, _ = issue_attendance_qr_token(
+            employee_id=self.user.employee_id,
+            event_type='entry',
+        )
+
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {str(jwt_token)}')
+        response = self.client.get(f'{self.scan_status_url}?qr_token={qr_token}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
 
 class AttendanceStatsTests(APITestCase):
     def setUp(self):
@@ -289,6 +358,7 @@ class AttendanceStatsTests(APITestCase):
         self.summary_url = reverse('attendance-stats-summary')
         self.sessions_url = reverse('attendance-stats-sessions')
         self.manager_daily_url = reverse('manager-daily')
+        self.verify_url = reverse('attendance-verify')
         self.client.force_authenticate(user=self.user)
 
     def _create_session(self, user, started_at, ended_at=None, duration_seconds=None):
@@ -506,3 +576,168 @@ class AttendanceStatsTests(APITestCase):
 
         self.assertEqual(first_response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(second_response.status_code, status.HTTP_200_OK)
+
+class AttendanceStatsExtraTests(APITestCase):
+    """Additional stats tests covering edge cases in _parse_stats_filters and _get_filtered_sessions."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='stats-extra-user',
+            email='stats-extra@example.com',
+            employee_id='EMP-6000',
+            employment='FT',
+            is_active=True,
+            password='Str0ngP@ssword!',
+        )
+        self.summary_url = reverse('attendance-stats-summary')
+        self.sessions_url = reverse('attendance-stats-sessions')
+        self.client.force_authenticate(user=self.user)
+
+    def test_stats_summary_invalid_date_to_returns_400(self):
+        response = self.client.get(f'{self.summary_url}?date_to=not-a-date')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_stats_summary_date_from_after_date_to_returns_400(self):
+        response = self.client.get(f'{self.summary_url}?date_from=2026-05-10&date_to=2026-05-01')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_stats_sessions_closed_status_filter(self):
+        now = timezone.now()
+        session = WorkSession.objects.create(
+            user=self.user,
+            ended_at=now - timedelta(hours=1),
+            duration_seconds=3600,
+        )
+        session.started_at = now - timedelta(hours=2)
+        session.save(update_fields=['started_at'])
+        WorkSession.objects.create(user=self.user)
+
+        response = self.client.get(f'{self.sessions_url}?status=closed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['status'], 'closed')
+
+
+class ManagerViewTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.manager = User.objects.create_user(
+            username='manager-view-user',
+            email='manager-view@example.com',
+            employee_id='EMP-MGR1',
+            employment='FT',
+            is_active=True,
+            is_manager=True,
+            password='Str0ngP@ssword!',
+        )
+        self.employee = User.objects.create_user(
+            username='emp-view-user',
+            email='emp-view@example.com',
+            employee_id='EMP-EMP2',
+            employment='FT',
+            is_active=True,
+            password='Str0ngP@ssword!',
+        )
+        self.client.force_authenticate(user=self.manager)
+
+    def test_manager_overview_returns_attendance_counts(self):
+        response = self.client.get(reverse('manager-overview'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for key in ('total_users', 'users_in', 'users_worked_today', 'users_absent', 'date'):
+            self.assertIn(key, response.data)
+
+    def test_manager_overview_requires_manager_permission(self):
+        self.client.force_authenticate(user=self.employee)
+        response = self.client.get(reverse('manager-overview'))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_users_list_returns_all_users(self):
+        response = self.client.get(reverse('manager-users-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data['count'], 2)
+
+    def test_manager_users_list_filter_by_is_active(self):
+        response = self.client.get(f"{reverse('manager-users-list')}?is_active=true")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for user_data in response.data['results']:
+            self.assertTrue(user_data['is_active'])
+
+    def test_manager_user_detail_returns_stats_and_today(self):
+        url = reverse('manager-user-detail', args=[self.employee.employee_id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('stats', response.data)
+        self.assertIn('today', response.data)
+
+    def test_manager_user_detail_unknown_employee_returns_404(self):
+        url = reverse('manager-user-detail', args=['EMP-UNKNOWN-X'])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_user_sessions_returns_paginated_results(self):
+        url = reverse('manager-user-sessions', args=[self.employee.employee_id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('count', response.data)
+
+    def test_manager_user_sessions_unknown_employee_returns_404(self):
+        url = reverse('manager-user-sessions', args=['EMP-UNKNOWN-X'])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_user_daily_breakdown_invalid_date_returns_400(self):
+        url = reverse('manager-user-daily-breakdown', args=[self.employee.employee_id])
+        response = self.client.get(f'{url}?date_from=not-a-date')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_manager_user_daily_breakdown_unknown_employee_returns_404(self):
+        url = reverse('manager-user-daily-breakdown', args=['EMP-UNKNOWN-X'])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class ValidateAttendancePayloadTests(TestCase):
+    """Unit tests for validate_attendance_payload (attendance/tokens.py)."""
+
+    def test_non_dict_payload_raises(self):
+        with self.assertRaises(ValueError):
+            validate_attendance_payload('not-a-dict')
+
+    def test_missing_employee_id_raises(self):
+        with self.assertRaises(ValueError):
+            validate_attendance_payload({'event_type': 'entry', 'nonce': 'abc'})
+
+    def test_invalid_event_type_raises(self):
+        with self.assertRaises(ValueError):
+            validate_attendance_payload({'employee_id': 'EMP-1', 'event_type': 'break', 'nonce': 'abc'})
+
+    def test_empty_nonce_raises(self):
+        with self.assertRaises(ValueError):
+            validate_attendance_payload({'employee_id': 'EMP-1', 'event_type': 'entry', 'nonce': ''})
+
+
+class AttendanceModelStrTests(TestCase):
+    """Tests for __str__ methods on attendance models."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='model-str-user',
+            email='modelstr@example.com',
+            employee_id='EMP-7777',
+            employment='FT',
+            is_active=True,
+            password='Str0ngP@ssword!',
+        )
+
+    def test_consumed_qr_token_str(self):
+        token = ConsumedQrToken.objects.create(
+            nonce='testnonce123',
+            employee_id='EMP-7777',
+            event_type='entry',
+        )
+        self.assertEqual(str(token), 'EMP-7777:entry:testnonce123')
+
+    def test_work_session_str(self):
+        session = WorkSession.objects.create(user=self.user)
+        self.assertIn('EMP-7777', str(session))

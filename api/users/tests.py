@@ -1,10 +1,12 @@
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
 from .tokens import REFRESH_COOKIE_NAME
+from .utils import authenticate_user_by_email
 
 
 class LoginViewTests(APITestCase):
@@ -110,6 +112,7 @@ class MeViewTests(APITestCase):
                 'employee_id': self.user.employee_id,
                 'employment': self.user.employment,
                 'is_active': self.user.is_active,
+                'is_manager': self.user.is_manager,
             },
         )
 
@@ -117,3 +120,63 @@ class MeViewTests(APITestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class LogoutViewTests(APITestCase):
+    def setUp(self):
+        self.url = reverse('logout')
+
+    def test_logout_returns_200_and_clears_cookie(self):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(REFRESH_COOKIE_NAME, response.cookies)
+
+
+class RefreshTokenViewTests(APITestCase):
+    def setUp(self):
+        self.url = reverse('refresh-token')
+        self.password = 'Str0ngP@ssword!'
+        self.user = get_user_model().objects.create_user(
+            username='refresh-user',
+            email='refresh@example.com',
+            employee_id='EMP-5000',
+            employment='FT',
+            is_active=True,
+        )
+        self.user.set_password(self.password)
+        self.user.save()
+
+    def _get_refresh_token(self):
+        response = self.client.post(
+            reverse('login'),
+            {'email': self.user.email, 'password': self.password},
+            format='json',
+        )
+        return response.cookies[REFRESH_COOKIE_NAME].value
+
+    def test_refresh_with_valid_cookie_returns_new_access_token(self):
+        self.client.cookies[REFRESH_COOKIE_NAME] = self._get_refresh_token()
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access', response.data)
+
+    def test_refresh_without_cookie_returns_401(self):
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_refresh_with_invalid_token_returns_401(self):
+        self.client.cookies[REFRESH_COOKIE_NAME] = 'bad-token-value'
+        response = self.client.post(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AuthenticateUserByEmailTests(TestCase):
+    """Direct unit tests for authenticate_user_by_email (users/utils.py)."""
+
+    def test_returns_none_for_empty_email(self):
+        result = authenticate_user_by_email(email='', password='somepassword')
+        self.assertIsNone(result)
+
+    def test_returns_none_for_empty_password(self):
+        result = authenticate_user_by_email(email='someone@example.com', password='')
+        self.assertIsNone(result)

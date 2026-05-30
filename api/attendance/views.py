@@ -23,7 +23,10 @@ def _parse_stats_filters(request):
 
     date_from = None
     if date_from_raw:
-        date_from = parse_date(date_from_raw)
+        try:
+            date_from = parse_date(date_from_raw)
+        except ValueError:
+            date_from = None
         if date_from is None:
             return None, Response(
                 {'detail': 'Invalid date_from. Expected YYYY-MM-DD.'},
@@ -32,7 +35,10 @@ def _parse_stats_filters(request):
 
     date_to = None
     if date_to_raw:
-        date_to = parse_date(date_to_raw)
+        try:
+            date_to = parse_date(date_to_raw)
+        except ValueError:
+            date_to = None
         if date_to is None:
             return None, Response(
                 {'detail': 'Invalid date_to. Expected YYYY-MM-DD.'},

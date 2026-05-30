@@ -1,0 +1,14 @@
+[run]
+source = attendance, users
+omit =
+    */migrations/*
+    */tests.py
+
+[report]
+show_missing = true
+omit =
+    */migrations/*
+    */tests.py
+
+[html]
+directory = htmlcov
